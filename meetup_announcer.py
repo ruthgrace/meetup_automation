@@ -85,50 +85,62 @@ def setup_display(manual_login=False):
         display.start()
         return display
 
-def setup_driver(manual_login=False):
+def setup_driver():
     """Set up and return a configured Chrome WebDriver."""
     chrome_options = Options()
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument('--disable-gpu')
+    chrome_options.add_argument('--disable-extensions')
+    chrome_options.add_argument('--disable-infobars')
+    chrome_options.add_argument('--disable-notifications')
+    chrome_options.add_argument('--disable-popup-blocking')
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+    chrome_options.add_argument('--window-size=1920,1080')
+    chrome_options.add_argument('--start-maximized')
+    chrome_options.add_argument('--disable-web-security')
+    chrome_options.add_argument('--allow-running-insecure-content')
+    chrome_options.add_argument('--disable-features=IsolateOrigins,site-per-process')
+    chrome_options.add_argument('--disable-site-isolation-trials')
+    chrome_options.add_argument('--ignore-certificate-errors')
+    chrome_options.add_argument('--ignore-ssl-errors')
+    chrome_options.add_argument('--disable-background-networking')
+    chrome_options.add_argument('--disable-background-timer-throttling')
+    chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+    chrome_options.add_argument('--disable-breakpad')
+    chrome_options.add_argument('--disable-component-extensions-with-background-pages')
+    chrome_options.add_argument('--disable-features=TranslateUI,BlinkGenPropertyTrees')
+    chrome_options.add_argument('--disable-ipc-flooding-protection')
+    chrome_options.add_argument('--disable-renderer-backgrounding')
+    chrome_options.add_argument('--enable-features=NetworkService,NetworkServiceInProcess')
+    chrome_options.add_argument('--metrics-recording-only')
+    chrome_options.add_argument('--no-first-run')
+    chrome_options.add_argument('--password-store=basic')
+    chrome_options.add_argument('--use-mock-keychain')
+    chrome_options.add_argument('--force-device-scale-factor=1')
+    chrome_options.add_argument('--log-level=3')
+    chrome_options.add_argument('--silent')
+    chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--remote-debugging-port=9222')
+    chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    chrome_options.add_argument('--binary=/usr/bin/chromium')
     
-    # Set Chrome binary location for AlmaLinux
-    chrome_options.binary_location = "/usr/lib64/chromium-browser/chromium-browser.sh"
+    # Set page load strategy to eager to prevent timeouts
+    chrome_options.page_load_strategy = 'eager'
     
-    if not manual_login:
-        chrome_options.add_argument('--headless=new')  # Use new headless mode
-        chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-infobars')
-        chrome_options.add_argument('--disable-notifications')
-        chrome_options.add_argument('--disable-popup-blocking')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    
-    # Add user data directory for persistent profile
-    chrome_options.add_argument('--user-data-dir=./chrome_profile')
-    
-    # Anti-detection options
+    # Add experimental options
     chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     
-    try:
-        driver = webdriver.Chrome(options=chrome_options)
-        
-        # Additional anti-detection measures
-        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-            'source': '''
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                })
-            '''
-        })
-        
-        driver.set_page_load_timeout(30)
-        return driver
-    except Exception as e:
-        logging.error(f"Failed to initialize Chrome driver: {str(e)}")
-        raise
+    # Create driver with increased timeouts
+    driver = webdriver.Chrome(options=chrome_options)
+    driver.set_page_load_timeout(60)  # Increase page load timeout to 60 seconds
+    driver.implicitly_wait(30)  # Increase implicit wait to 30 seconds
+    
+    # Set script timeout
+    driver.set_script_timeout(60)
+    
+    return driver
 
 def manual_login(driver, group_url):
     """Handle manual login process"""
@@ -175,93 +187,81 @@ def is_event_within_range(event_date_str):
         raise  # Re-raise the exception to be handled by the caller
 
 def announce_events(driver, group_url):
-    """Check and announce events"""
+    """Navigate to events page and announce events."""
     try:
-        # Navigate to group's events page
         events_url = f"{group_url}events/"
         logging.info(f"Attempting to navigate to: {events_url}")
-        driver.get(events_url)
-        logging.info(f"Successfully navigated to events page: {events_url}")
         
-        # Wait for events to load with increased timeout
-        logging.info("Waiting for event cards to load...")
-        try:
-            # Try multiple selectors for event cards
-            selectors = [
-                'a[id^="event-card-e-"]',  # Original selector
-                'a[data-event-label^="event-card-"]',  # Alternative selector from HTML
-                'a[href*="/events/"]'  # Fallback selector
-            ]
-            
-            event_card = None
-            for selector in selectors:
-                try:
-                    logging.info(f"Trying selector: {selector}")
-                    event_card = WebDriverWait(driver, 20).until(  # Increased timeout to 20 seconds
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    if event_card:
-                        logging.info(f"Found event cards with selector: {selector}")
-                        break
-                except TimeoutException:
-                    continue
-            
-            if not event_card:
-                raise TimeoutException("Could not find event cards with any selector")
-                
-            logging.info("Event cards loaded successfully")
-        except TimeoutException as e:
-            logging.error(f"Timeout waiting for event cards to load: {str(e)}")
-            # Take a screenshot for debugging
-            driver.save_screenshot('error_screenshot.png')
-            logging.info("Saved error screenshot to error_screenshot.png")
-            raise
-        
-        processed_events = set()  # Keep track of processed events
-        
-        while True:
+        # Add retry logic for page load
+        max_retries = 3
+        for attempt in range(max_retries):
             try:
-                # Find all event cards using the successful selector
-                event_cards = driver.find_elements(By.CSS_SELECTOR, selector)
-                if not event_cards:
-                    logging.info("No more events to process")
+                driver.get(events_url)
+                logging.info(f"Successfully navigated to events page: {events_url}")
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                logging.warning(f"Attempt {attempt + 1} failed to load page: {str(e)}")
+                time.sleep(5)  # Wait before retrying
+        
+        # Wait for event cards with increased timeout
+        logging.info("Waiting for event cards to load...")
+        wait = WebDriverWait(driver, 30)  # Increase timeout to 30 seconds
+        
+        # Try multiple selectors with increased timeouts
+        selectors = [
+            'a[id^="event-card-e-"]',
+            'a[data-event-label^="event-card-"]',
+            'a[href*="/events/"]'
+        ]
+        
+        event_cards = None
+        for selector in selectors:
+            try:
+                logging.info(f"Trying selector: {selector}")
+                event_cards = wait.until(
+                    EC.presence_of_all_elements_located((By.CSS_SELECTOR, selector))
+                )
+                if event_cards:
+                    logging.info(f"Found event cards with selector: {selector}")
                     break
+            except Exception as e:
+                logging.warning(f"Selector {selector} failed: {str(e)}")
+                continue
+        
+        if not event_cards:
+            logging.error("No event cards found with any selector")
+            return
+        
+        logging.info("Event cards loaded successfully")
+        
+        # Get all event URLs first to avoid stale elements
+        event_urls = []
+        for card in event_cards:
+            try:
+                event_url = card.get_attribute('href')
+                date_element = card.find_element(By.CSS_SELECTOR, 'time')
+                event_date = date_element.text
+                event_urls.append((event_url, event_date))
+            except Exception as e:
+                logging.warning(f"Could not get event details from card: {str(e)}")
+                continue
+        
+        # Process each event URL
+        for event_url, event_date in event_urls:
+            try:
+                # Check if event is within the next 18 days or in the past
+                if not is_event_within_range(event_date):
+                    logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
+                    return  # Exit the function since all subsequent events will be further in the future
                 
-                # Find the first unprocessed event
-                current_event = None
-                for card in event_cards:
-                    event_url = card.get_attribute('href')
-                    if event_url not in processed_events:
-                        current_event = card
-                        break
-                
-                if not current_event:
-                    logging.info("All events have been processed")
-                    break
-                
-                # Get event details
-                try:
-                    date_element = current_event.find_element(By.CSS_SELECTOR, 'time')
-                    event_date = date_element.text
-                    event_url = current_event.get_attribute('href')
-                    
-                    # Check if event is within the next 18 days or in the past
-                    if not is_event_within_range(event_date):
-                        logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
-                        return  # Exit the function since all subsequent events will be further in the future
-                    
-                    logging.info(f"Processing event on {event_date}")
-                    logging.info(f"Navigating to event page: {event_url}")
-                except NoSuchElementException as e:
-                    logging.warning(f"Could not get event details: {str(e)}")
-                    processed_events.add(event_url)  # Mark as processed even if we couldn't get details
-                    continue
+                logging.info(f"Processing event on {event_date}")
+                logging.info(f"Navigating to event page: {event_url}")
                 
                 # Navigate to event page
                 driver.get(event_url)
-                
-                # Wait for the page to load
-                time.sleep(2)
+                time.sleep(2)  # Wait for page to load
                 
                 # Look for the announce banner
                 try:
@@ -296,13 +296,6 @@ def announce_events(driver, group_url):
                 except TimeoutException:
                     logging.info("No announce banner found - event may already be announced")
                 
-                # Mark event as processed
-                processed_events.add(event_url)
-                
-                # Navigate back to events page
-                driver.get(events_url)
-                time.sleep(2)  # Wait for page to load
-                
             except Exception as e:
                 logging.error(f"Error processing event: {str(e)}")
                 # Take a screenshot for debugging
@@ -311,9 +304,6 @@ def announce_events(driver, group_url):
                     logging.info("Saved error screenshot to error_screenshot.png")
                 except:
                     logging.error("Could not save error screenshot")
-                # Navigate back to events page and continue
-                driver.get(events_url)
-                time.sleep(2)
                 continue
             
     except Exception as e:
@@ -337,7 +327,7 @@ def main():
     
     try:
         display = setup_display(args.manual_login)
-        driver = setup_driver(args.manual_login)
+        driver = setup_driver()
         
         if args.manual_login:
             if not manual_login(driver, args.group_url):
