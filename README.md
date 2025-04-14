@@ -69,10 +69,6 @@ sudo systemctl restart meetup-announcer.timer
    - Verify Xvfb is running: `ps aux | grep Xvfb`
    - Check DISPLAY environment variable: `echo $DISPLAY`
 
-3. For VNC issues:
-   - Verify VNC server is installed: `which vncserver`
-   - Check VNC server status: `systemctl status vncserver@:1`
-
 ## Logging
 
 All actions are logged to `meetup_announcer.log` in the current directory. Check this file for detailed information about the script's operation and any errors that occur.
