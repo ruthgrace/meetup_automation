@@ -152,7 +152,7 @@ def manual_login(driver, group_url):
         return False
 
 def is_event_within_range(event_date_str):
-    """Check if event is within the next 18 days."""
+    """Check if event is within the next 18 days or in the past."""
     try:
         logging.info(f"Parsing date: {event_date_str}")
         
@@ -168,8 +168,8 @@ def is_event_within_range(event_date_str):
         date_range = event_date - current_date
         logging.info(f"Days until event: {date_range.days}")
         
-        # Check if event is within next 18 days
-        return 0 <= date_range.days <= 18
+        # Check if event is within next 18 days or in the past
+        return date_range.days <= 18
     except Exception as e:
         logging.error(f"Error parsing date {event_date_str}: {str(e)}")
         raise  # Re-raise the exception to be handled by the caller
@@ -245,7 +245,7 @@ def announce_events(driver, group_url):
                     event_date = date_element.text
                     event_url = current_event.get_attribute('href')
                     
-                    # Check if event is within the next 18 days
+                    # Check if event is within the next 18 days or in the past
                     if not is_event_within_range(event_date):
                         logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
                         return  # Exit the function since all subsequent events will be further in the future
