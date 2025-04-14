@@ -22,11 +22,6 @@ sudo dnf install -y xorg-x11-server-Xephyr
 sudo dnf install -y tigervnc-server
 ```
 
-set up vnc password
-```
-vncpasswd
-```
-
 2. Create and activate a virtual environment:
 ```bash
 python3 -m venv venv
@@ -55,12 +50,13 @@ python meetup_announcer.py --manual-login --group-url "https://www.meetup.com/yo
 python meetup_announcer.py --group-url "https://www.meetup.com/your-group-name/"
 ```
 
-## Features
+## Installation
 
-- Automatically detects events within the next 18 days
-- Clicks the "Announce" button for eligible events
-- Supports both manual and automated login
-- Logs all actions to `meetup_announcer.log`
+```bash
+sudo ./install_service.sh
+sudo systemctl daemon-reload
+sudo systemctl restart meetup-announcer.timer
+```
 
 ## Troubleshooting
 
@@ -84,5 +80,4 @@ All actions are logged to `meetup_announcer.log` in the current directory. Check
 ## Security Notes
 
 - The script stores Chrome profile data in the `chrome_profile` directory
-- VNC password is required for manual login mode
 - Never share your Meetup credentials or Chrome profile data

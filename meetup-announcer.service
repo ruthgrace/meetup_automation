@@ -1,0 +1,16 @@
+[Unit]
+Description=Meetup Event Announcer Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/meetup_automation
+Environment=DISPLAY=:0
+Environment=PYTHONPATH=/var/www/meetup_automation
+ExecStart=/usr/bin/python3 /var/www/meetup_automation/meetup_announcer.py --group-url "https://www.meetup.com/joyful-parenting-sf/"
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target 
