@@ -3,7 +3,7 @@ Description=Run Meetup Event Announcer daily
 
 [Timer]
 OnBootSec=15min
-OnCalendar=*-*-* 09:00:00
+OnCalendar=*-*-* 18:00:00
 Unit=meetup-announcer.service
 
 [Install]

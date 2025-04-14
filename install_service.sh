@@ -15,4 +15,4 @@ sudo systemctl start meetup-announcer.timer
 echo "Service status:"
 sudo systemctl status meetup-announcer.timer
 echo -e "\nTimer status:"
-sudo systemctl status meetup-announcer.timer 
+sudo systemctl status meetup-announcer.timer
