@@ -495,3 +495,16 @@ Stacktrace:
 2025-04-14 02:58:52,238 - INFO - No confirmation dialog found
 2025-04-14 02:59:24,247 - INFO - Processing event on MON, APR 28, 2025, 3:00 PM PDT
 2025-04-14 02:59:24,252 - INFO - Navigating to event page: https://www.meetup.com/joyful-parenting-sf/events/307184987/?eventOrigin=group_events_list
+2025-04-14 02:59:59,252 - INFO - Looking for announce banner...
+2025-04-14 02:59:59,416 - INFO - Found announce banner
+2025-04-14 02:59:59,573 - INFO - Clicking announce button for event on MON, APR 28, 2025, 3:00 PM PDT
+2025-04-14 03:00:07,758 - INFO - No confirmation dialog found
+2025-04-14 03:00:32,848 - INFO - Processing event on SAT, MAY 3, 2025, 10:30 AM PDT
+2025-04-14 03:00:32,858 - INFO - Navigating to event page: https://www.meetup.com/joyful-parenting-sf/events/307271365/?eventOrigin=group_events_list
+2025-04-14 03:00:48,281 - INFO - Looking for announce banner...
+2025-04-14 03:00:55,031 - INFO - Found announce banner
+2025-04-14 03:00:55,597 - INFO - Clicking announce button for event on SAT, MAY 3, 2025, 10:30 AM PDT
+2025-04-14 03:01:05,554 - INFO - No confirmation dialog found
+2025-04-14 03:01:25,271 - WARNING - Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fa5b1666a00>: Failed to establish a new connection: [Errno 111] Connection refused')': /session/3d2a3a3585b6d99ae0d837ee3d2c9e22
+2025-04-14 03:01:25,274 - WARNING - Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fa5b17cbf10>: Failed to establish a new connection: [Errno 111] Connection refused')': /session/3d2a3a3585b6d99ae0d837ee3d2c9e22
+2025-04-14 03:01:25,281 - WARNING - Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7fa5b17cbdf0>: Failed to establish a new connection: [Errno 111] Connection refused')': /session/3d2a3a3585b6d99ae0d837ee3d2c9e22

@@ -2,6 +2,10 @@ import os
 import time
 import logging
 import argparse
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.image import MIMEImage
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from pyvirtualdisplay import Display
 from selenium.webdriver.chrome.options import Options
-
+from constants import GMAIL_ADDRESS, GMAIL_PASSWORD
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +23,50 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+def send_error_email(error_message, log_file_path, screenshot_path):
+    """Send error notification email with log contents and screenshot."""
+    try:
+        # Create message
+        msg = MIMEMultipart()
+        msg['Subject'] = 'Meetup Announcer Script Error'
+        msg['From'] = 'meetup_announcer@gmail.com'  # Replace with your Gmail address
+        msg['To'] = 'RuthGraceWong@gmail.com'
+        
+        # Add error message
+        body = f"""
+        The Meetup Announcer script encountered an error:
+        
+        {error_message}
+        
+        Please check the attached log file and screenshot for details.
+        """
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach log file
+        with open(log_file_path, 'r') as f:
+            log_contents = f.read()
+        log_attachment = MIMEText(log_contents)
+        log_attachment.add_header('Content-Disposition', 'attachment', filename='meetup_announcer.log')
+        msg.attach(log_attachment)
+        
+        # Attach screenshot if it exists
+        if os.path.exists(screenshot_path):
+            with open(screenshot_path, 'rb') as f:
+                img_data = f.read()
+            image = MIMEImage(img_data)
+            image.add_header('Content-Disposition', 'attachment', filename='error_screenshot.png')
+            msg.attach(image)
+        
+        # Send email using Gmail SMTP
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            # Replace 'your_app_password' with the App Password you generate
+            server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
+            server.send_message(msg)
+        
+        logging.info("Error notification email sent successfully")
+    except Exception as e:
+        logging.error(f"Failed to send error notification email: {str(e)}")
 
 def setup_display(manual_login=False):
     """Set up virtual display for browser."""
@@ -248,7 +296,15 @@ def main():
         announce_events(driver, args.group_url)
         
     except Exception as e:
-        logging.error(f"An error occurred: {e}")
+        error_message = f"An error occurred: {e}"
+        logging.error(error_message)
+        
+        # Send error notification email
+        send_error_email(
+            error_message,
+            'meetup_announcer.log',
+            'error_screenshot.png'
+        )
     finally:
         if driver:
             driver.quit()
