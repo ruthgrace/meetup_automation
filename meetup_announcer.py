@@ -14,6 +14,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from pyvirtualdisplay import Display
 from selenium.webdriver.chrome.options import Options
 from constants import GMAIL_ADDRESS, GMAIL_PASSWORD
+from datetime import datetime, timedelta
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -149,6 +150,24 @@ def manual_login(driver, group_url):
         logging.error("Login verification failed. Please try again.")
         return False
 
+def is_event_within_range(event_date_str):
+    """Check if event is within the next 18 days."""
+    try:
+        # Parse the event date string (format: "MON, APR 14, 2025, 3:00 PM PDT")
+        event_date = datetime.strptime(event_date_str, "%a, %b %d, %Y, %I:%M %p %Z")
+        
+        # Get current date
+        current_date = datetime.now()
+        
+        # Calculate date range
+        date_range = event_date - current_date
+        
+        # Check if event is within next 18 days
+        return 0 <= date_range.days <= 18
+    except Exception as e:
+        logging.warning(f"Error parsing date {event_date_str}: {str(e)}")
+        return False
+
 def announce_events(driver, group_url):
     """Check and announce events"""
     try:
@@ -200,6 +219,13 @@ def announce_events(driver, group_url):
                     date_element = current_event.find_element(By.CSS_SELECTOR, 'time')
                     event_date = date_element.text
                     event_url = current_event.get_attribute('href')
+                    
+                    # Check if event is within the next 18 days
+                    if not is_event_within_range(event_date):
+                        logging.info(f"Skipping event on {event_date} - more than 18 days away")
+                        processed_events.add(event_url)
+                        continue
+                    
                     logging.info(f"Processing event on {event_date}")
                     logging.info(f"Navigating to event page: {event_url}")
                 except NoSuchElementException as e:
