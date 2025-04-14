@@ -17,3 +17,6 @@ constants.py
 *.swp
 *.swo 
 chrome_profile/
+
+meetup_announcer.log
+error_screenshot.png

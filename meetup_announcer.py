@@ -15,6 +15,7 @@ from pyvirtualdisplay import Display
 from selenium.webdriver.chrome.options import Options
 from constants import GMAIL_ADDRESS, GMAIL_PASSWORD
 from datetime import datetime, timedelta
+from dateutil import parser as date_parser
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -153,20 +154,25 @@ def manual_login(driver, group_url):
 def is_event_within_range(event_date_str):
     """Check if event is within the next 18 days."""
     try:
-        # Parse the event date string (format: "MON, APR 14, 2025, 3:00 PM PDT")
-        event_date = datetime.strptime(event_date_str, "%a, %b %d, %Y, %I:%M %p %Z")
+        logging.info(f"Parsing date: {event_date_str}")
+        
+        # Use dateutil.parser to parse the date string
+        event_date = date_parser.parse(event_date_str)
+        logging.info(f"Parsed date: {event_date}")
         
         # Get current date
-        current_date = datetime.now()
+        current_date = datetime.now(event_date.tzinfo)
+        logging.info(f"Today's date: {current_date.strftime('%Y-%m-%d %I:%M %p %Z')}")
         
         # Calculate date range
         date_range = event_date - current_date
+        logging.info(f"Days until event: {date_range.days}")
         
         # Check if event is within next 18 days
         return 0 <= date_range.days <= 18
     except Exception as e:
-        logging.warning(f"Error parsing date {event_date_str}: {str(e)}")
-        return False
+        logging.error(f"Error parsing date {event_date_str}: {str(e)}")
+        raise  # Re-raise the exception to be handled by the caller
 
 def announce_events(driver, group_url):
     """Check and announce events"""
@@ -177,16 +183,35 @@ def announce_events(driver, group_url):
         driver.get(events_url)
         logging.info(f"Successfully navigated to events page: {events_url}")
         
-        # Wait for events to load
+        # Wait for events to load with increased timeout
         logging.info("Waiting for event cards to load...")
         try:
-            # Updated selector for event cards
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'a[id^="event-card-e-"]'))
-            )
+            # Try multiple selectors for event cards
+            selectors = [
+                'a[id^="event-card-e-"]',  # Original selector
+                'a[data-event-label^="event-card-"]',  # Alternative selector from HTML
+                'a[href*="/events/"]'  # Fallback selector
+            ]
+            
+            event_card = None
+            for selector in selectors:
+                try:
+                    logging.info(f"Trying selector: {selector}")
+                    event_card = WebDriverWait(driver, 20).until(  # Increased timeout to 20 seconds
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    if event_card:
+                        logging.info(f"Found event cards with selector: {selector}")
+                        break
+                except TimeoutException:
+                    continue
+            
+            if not event_card:
+                raise TimeoutException("Could not find event cards with any selector")
+                
             logging.info("Event cards loaded successfully")
-        except TimeoutException:
-            logging.error("Timeout waiting for event cards to load")
+        except TimeoutException as e:
+            logging.error(f"Timeout waiting for event cards to load: {str(e)}")
             # Take a screenshot for debugging
             driver.save_screenshot('error_screenshot.png')
             logging.info("Saved error screenshot to error_screenshot.png")
@@ -196,8 +221,8 @@ def announce_events(driver, group_url):
         
         while True:
             try:
-                # Find all event cards
-                event_cards = driver.find_elements(By.CSS_SELECTOR, 'a[id^="event-card-e-"]')
+                # Find all event cards using the successful selector
+                event_cards = driver.find_elements(By.CSS_SELECTOR, selector)
                 if not event_cards:
                     logging.info("No more events to process")
                     break
@@ -222,9 +247,8 @@ def announce_events(driver, group_url):
                     
                     # Check if event is within the next 18 days
                     if not is_event_within_range(event_date):
-                        logging.info(f"Skipping event on {event_date} - more than 18 days away")
-                        processed_events.add(event_url)
-                        continue
+                        logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
+                        return  # Exit the function since all subsequent events will be further in the future
                     
                     logging.info(f"Processing event on {event_date}")
                     logging.info(f"Navigating to event page: {event_url}")
