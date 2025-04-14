@@ -1,0 +1,19 @@
+# Python virtual environment
+venv/
+env/
+ENV/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Credentials and sensitive information
+constants.py
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo 
+chrome_profile/
