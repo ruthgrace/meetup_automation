@@ -16,6 +16,7 @@ from selenium.webdriver.chrome.options import Options
 from constants import GMAIL_ADDRESS, GMAIL_PASSWORD
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
+import pytz
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -168,12 +169,41 @@ def is_event_within_range(event_date_str):
     try:
         logging.info(f"Parsing date: {event_date_str}")
         
-        # Use dateutil.parser to parse the date string
-        event_date = date_parser.parse(event_date_str)
-        logging.info(f"Parsed date: {event_date}")
+        # Handle timezone abbreviations
+        tz_map = {
+            'PDT': 'America/Los_Angeles',
+            'PST': 'America/Los_Angeles',
+            'EDT': 'America/New_York',
+            'EST': 'America/New_York'
+        }
         
-        # Get current date
-        current_date = datetime.now(event_date.tzinfo)
+        # Replace timezone abbreviation if present
+        for tz_abbr, tz_name in tz_map.items():
+            if tz_abbr in event_date_str:
+                # Replace timezone abbreviation
+                cleaned_date_str = event_date_str.replace(tz_abbr, '').strip()
+                logging.info(f"Cleaned date string: {cleaned_date_str}")
+                
+                # Parse without timezone first
+                date_obj = date_parser.parse(cleaned_date_str)
+                
+                # Then apply the timezone
+                tz = pytz.timezone(tz_name)
+                event_date = tz.localize(date_obj)
+                logging.info(f"Applied timezone {tz_name} to date: {event_date}")
+                break
+        else:
+            # If no timezone abbreviation found, use default parser
+            event_date = date_parser.parse(event_date_str)
+            logging.info(f"Using default parser: {event_date}")
+        
+        # Get current date in the same timezone
+        if event_date.tzinfo:
+            current_date = datetime.now(event_date.tzinfo)
+        else:
+            # If event has no timezone, use UTC
+            current_date = datetime.now(pytz.UTC)
+            
         logging.info(f"Today's date: {current_date.strftime('%Y-%m-%d %I:%M %p %Z')}")
         
         # Calculate date range
@@ -184,7 +214,8 @@ def is_event_within_range(event_date_str):
         return date_range.days <= 18
     except Exception as e:
         logging.error(f"Error parsing date {event_date_str}: {str(e)}")
-        raise  # Re-raise the exception to be handled by the caller
+        # Return True to process the event anyway if we can't parse the date
+        return True
 
 def announce_events(driver, group_url):
     """Navigate to events page and announce events."""

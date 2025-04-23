@@ -2,3 +2,4 @@ selenium==4.18.1
 pyvirtualdisplay==3.0
 python-dateutil==2.8.2
 webdriver-manager>=4.0.1 
+pytz
