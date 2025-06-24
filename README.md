@@ -42,12 +42,12 @@ source venv/bin/activate
 ```
 
 ```bash
-python meetup_announcer.py --manual-login --group-url "https://www.meetup.com/your-group-name/"
+python meetup_announcer.py --manual-login --group-url "https://www.meetup.com/joyful-parenting-sf/"
 ```
 
 2. Subsequent runs (automated):
 ```bash
-python meetup_announcer.py --group-url "https://www.meetup.com/your-group-name/"
+python meetup_announcer.py --group-url "https://www.meetup.com/joyful-parenting-sf/"
 ```
 
 ## Installation

@@ -3,6 +3,7 @@ import time
 import logging
 import argparse
 import smtplib
+import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
@@ -30,10 +31,12 @@ logging.basicConfig(
 def send_error_email(error_message, log_file_path, screenshot_path):
     """Send error notification email with log contents and screenshot."""
     try:
+        logging.info("Attempting to send error notification email...")
+        
         # Create message
         msg = MIMEMultipart()
         msg['Subject'] = 'Meetup Announcer Script Error'
-        msg['From'] = 'meetup_announcer@gmail.com'  # Replace with your Gmail address
+        msg['From'] = GMAIL_ADDRESS  # Use the actual Gmail address from constants
         msg['To'] = 'RuthGraceWong@gmail.com'
         
         # Add error message
@@ -46,30 +49,44 @@ def send_error_email(error_message, log_file_path, screenshot_path):
         """
         msg.attach(MIMEText(body, 'plain'))
         
-        # Attach log file
-        with open(log_file_path, 'r') as f:
-            log_contents = f.read()
-        log_attachment = MIMEText(log_contents)
-        log_attachment.add_header('Content-Disposition', 'attachment', filename='meetup_announcer.log')
-        msg.attach(log_attachment)
+        # Attach log file if it exists
+        if os.path.exists(log_file_path):
+            logging.info(f"Attaching log file: {log_file_path}")
+            with open(log_file_path, 'r') as f:
+                log_contents = f.read()
+            log_attachment = MIMEText(log_contents)
+            log_attachment.add_header('Content-Disposition', 'attachment', filename='meetup_announcer.log')
+            msg.attach(log_attachment)
+        else:
+            logging.warning(f"Log file not found: {log_file_path}")
         
         # Attach screenshot if it exists
         if os.path.exists(screenshot_path):
+            logging.info(f"Attaching screenshot: {screenshot_path}")
             with open(screenshot_path, 'rb') as f:
                 img_data = f.read()
             image = MIMEImage(img_data)
             image.add_header('Content-Disposition', 'attachment', filename='error_screenshot.png')
             msg.attach(image)
+        else:
+            logging.info(f"Screenshot not found: {screenshot_path}")
         
         # Send email using Gmail SMTP
+        logging.info("Connecting to Gmail SMTP server...")
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            # Replace 'your_app_password' with the App Password you generate
+            logging.info("Logging into Gmail...")
             server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
+            logging.info("Sending email...")
             server.send_message(msg)
         
         logging.info("Error notification email sent successfully")
+        print("ERROR NOTIFICATION EMAIL SENT SUCCESSFULLY")  # Also print to console
+        
     except Exception as e:
-        logging.error(f"Failed to send error notification email: {str(e)}")
+        email_error_traceback = traceback.format_exc()
+        error_msg = f"Failed to send error notification email: {str(e)}\nEmail Error Traceback:\n{email_error_traceback}"
+        logging.error(error_msg)
+        print(f"FAILED TO SEND EMAIL: {str(e)}")  # Also print to console
 
 def setup_display(manual_login=False):
     """Set up virtual display for browser."""
@@ -328,7 +345,8 @@ def announce_events(driver, group_url):
                     logging.info("No announce banner found - event may already be announced")
                 
             except Exception as e:
-                logging.error(f"Error processing event: {str(e)}")
+                error_traceback = traceback.format_exc()
+                logging.error(f"Error processing event: {str(e)}\nTraceback:\n{error_traceback}")
                 # Take a screenshot for debugging
                 try:
                     driver.save_screenshot('error_screenshot.png')
@@ -338,7 +356,8 @@ def announce_events(driver, group_url):
                 continue
             
     except Exception as e:
-        logging.error(f"Error during event announcement: {str(e)}")
+        error_traceback = traceback.format_exc() 
+        logging.error(f"Error during event announcement: {str(e)}\nTraceback:\n{error_traceback}")
         # Take a screenshot for debugging
         try:
             driver.save_screenshot('error_screenshot.png')
@@ -367,8 +386,13 @@ def main():
         announce_events(driver, args.group_url)
         
     except Exception as e:
-        error_message = f"An error occurred: {e}"
+        # Get full traceback for debugging
+        full_traceback = traceback.format_exc()
+        error_message = f"An error occurred: {e}\nStacktrace:\n{full_traceback}"
         logging.error(error_message)
+        print(f"\n=== SCRIPT ERROR OCCURRED ===")
+        print(f"Error: {e}")
+        print(f"Attempting to send error notification email...")
         
         # Send error notification email
         send_error_email(
