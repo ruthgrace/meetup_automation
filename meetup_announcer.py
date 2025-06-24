@@ -49,16 +49,41 @@ def send_error_email(error_message, log_file_path, screenshot_path):
         """
         msg.attach(MIMEText(body, 'plain'))
         
-        # Attach log file if it exists
-        if os.path.exists(log_file_path):
-            logging.info(f"Attaching log file: {log_file_path}")
-            with open(log_file_path, 'r') as f:
-                log_contents = f.read()
+        # Extract journalctl logs instead of file logs
+        try:
+            logging.info("Extracting journalctl logs for meetup-announcer service...")
+            import subprocess
+            
+            # Get last 100 lines of logs for the meetup-announcer service
+            journal_cmd = ['journalctl', '-u', 'meetup-announcer.service', '-n', '100', '--no-pager']
+            result = subprocess.run(journal_cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                log_contents = result.stdout
+                logging.info(f"Successfully extracted {len(log_contents.splitlines())} lines from journalctl")
+            else:
+                # Fallback to general system logs if service-specific logs aren't available
+                logging.info("Service logs not found, getting recent system logs...")
+                journal_cmd = ['journalctl', '-n', '50', '--no-pager', '--since', '1 hour ago']
+                result = subprocess.run(journal_cmd, capture_output=True, text=True, timeout=30)
+                log_contents = result.stdout if result.returncode == 0 else "Could not retrieve journalctl logs"
+            
             log_attachment = MIMEText(log_contents)
-            log_attachment.add_header('Content-Disposition', 'attachment', filename='meetup_announcer.log')
+            log_attachment.add_header('Content-Disposition', 'attachment', filename='journalctl_logs.txt')
             msg.attach(log_attachment)
-        else:
-            logging.warning(f"Log file not found: {log_file_path}")
+            
+        except Exception as e:
+            logging.warning(f"Could not extract journalctl logs: {str(e)}")
+            # Try to attach file log as fallback
+            if os.path.exists(log_file_path):
+                logging.info(f"Falling back to log file: {log_file_path}")
+                with open(log_file_path, 'r') as f:
+                    log_contents = f.read()
+                log_attachment = MIMEText(log_contents)
+                log_attachment.add_header('Content-Disposition', 'attachment', filename='meetup_announcer.log')
+                msg.attach(log_attachment)
+            else:
+                logging.warning("No logs available to attach")
         
         # Attach screenshot if it exists
         if os.path.exists(screenshot_path):
