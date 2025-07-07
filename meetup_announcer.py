@@ -128,7 +128,7 @@ def setup_display(manual_login=False):
         display.start()
         return display
 
-def setup_driver():
+def setup_driver(manual_login=False):
     """Set up and return a configured Chrome WebDriver."""
     chrome_options = Options()
     chrome_options.add_argument('--no-sandbox')
@@ -163,7 +163,14 @@ def setup_driver():
     chrome_options.add_argument('--force-device-scale-factor=1')
     chrome_options.add_argument('--log-level=3')
     chrome_options.add_argument('--silent')
-    chrome_options.add_argument('--headless=new')
+    
+    # Only use headless mode if NOT doing manual login
+    if not manual_login:
+        chrome_options.add_argument('--headless=new')
+        logging.info("Running in headless mode")
+    else:
+        logging.info("Running in visible mode for manual login")
+    
     chrome_options.add_argument('--remote-debugging-port=9222')
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     chrome_options.add_argument('--binary=/usr/bin/chromium')
@@ -204,6 +211,214 @@ def manual_login(driver, group_url):
         return True
     except TimeoutException:
         logging.error("Login verification failed. Please try again.")
+        return False
+
+def automated_login(driver, group_url):
+    """Attempt automated login using saved credentials."""
+    try:
+        logging.info("Attempting automated login...")
+        
+        # Navigate to Meetup login page
+        driver.get("https://www.meetup.com/login/")
+        time.sleep(3)
+        
+        # Look for email input field
+        email_selectors = [
+            'input[type="email"]',
+            'input[name="email"]',
+            'input[id="email"]',
+            'input[placeholder*="email"]'
+        ]
+        
+        email_input = None
+        for selector in email_selectors:
+            try:
+                email_input = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                )
+                if email_input.is_displayed():
+                    logging.info(f"Found email input with selector: {selector}")
+                    break
+            except TimeoutException:
+                continue
+        
+        if not email_input:
+            logging.error("Could not find email input field")
+            return False
+        
+        # Enter email
+        email_input.clear()
+        email_input.send_keys(MEETUP_EMAIL)
+        logging.info("Entered email address")
+        
+        # Look for password input field
+        password_selectors = [
+            'input[type="password"]',
+            'input[name="password"]',
+            'input[id="password"]',
+            'input[placeholder*="password"]'
+        ]
+        
+        password_input = None
+        for selector in password_selectors:
+            try:
+                password_input = driver.find_element(By.CSS_SELECTOR, selector)
+                if password_input.is_displayed():
+                    logging.info(f"Found password input with selector: {selector}")
+                    break
+            except NoSuchElementException:
+                continue
+        
+        if not password_input:
+            logging.error("Could not find password input field")
+            return False
+        
+        # Enter password
+        password_input.clear()
+        password_input.send_keys(MEETUP_PASSWORD)
+        logging.info("Entered password")
+        
+        # Look for submit button
+        submit_selectors = [
+            'button[type="submit"]',
+            'input[type="submit"]',
+            'button:contains("Log in")',
+            'button:contains("Sign in")',
+            '.login-button'
+        ]
+        
+        submit_button = None
+        for selector in submit_selectors:
+            try:
+                if 'contains' in selector:
+                    submit_button = driver.find_element(By.XPATH, f"//button[contains(text(), 'Log in')] | //button[contains(text(), 'Sign in')]")
+                else:
+                    submit_button = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if submit_button.is_displayed() and submit_button.is_enabled():
+                    logging.info(f"Found submit button with selector: {selector}")
+                    break
+            except NoSuchElementException:
+                continue
+        
+        if not submit_button:
+            logging.error("Could not find submit button")
+            return False
+        
+        # Click submit
+        submit_button.click()
+        logging.info("Clicked login button")
+        
+        # Wait for login to complete
+        time.sleep(5)
+        
+        # Check if login was successful
+        if check_authentication(driver):
+            logging.info("Automated login successful!")
+            return True
+        else:
+            logging.error("Automated login failed - authentication check failed")
+            return False
+        
+    except Exception as e:
+        logging.error(f"Error during automated login: {str(e)}")
+        return False
+
+def check_authentication(driver):
+    """Check if the user is properly authenticated."""
+    try:
+        logging.info("Checking authentication status...")
+        
+        # Look for elements that indicate we're logged in
+        login_indicators = [
+            '[data-testid="header-profile-menu"]',  # User profile menu
+            '[data-testid="headerProfileMenu"]',    # Alternative profile menu
+            'button[aria-label*="Profile"]',         # Profile button
+            '.header-profile',                       # Profile section
+            '[data-testid="nav-profile"]'            # Navigation profile
+        ]
+        
+        for indicator in login_indicators:
+            try:
+                element = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
+                )
+                if element.is_displayed():
+                    logging.info(f"Found authentication indicator: {indicator}")
+                    return True
+            except TimeoutException:
+                continue
+        
+        # Check if we're on a login page (indicates not logged in)
+        login_page_indicators = [
+            'input[type="email"]',
+            'input[name="email"]',
+            'button[type="submit"]',
+            'form[action*="login"]',
+            '.login-form',
+            'input[placeholder*="email"]'
+        ]
+        
+        for indicator in login_page_indicators:
+            try:
+                element = driver.find_element(By.CSS_SELECTOR, indicator)
+                if element.is_displayed():
+                    logging.warning(f"Found login page indicator: {indicator}")
+                    return False
+            except NoSuchElementException:
+                continue
+        
+        # Check URL for login indicators
+        current_url = driver.current_url
+        if 'login' in current_url.lower() or 'signin' in current_url.lower():
+            logging.warning(f"Current URL indicates login page: {current_url}")
+            return False
+        
+        # If we can't find clear indicators, assume we're not logged in
+        logging.warning("Could not find clear authentication indicators - assuming not logged in")
+        return False
+        
+    except Exception as e:
+        logging.error(f"Error checking authentication: {str(e)}")
+        return False
+
+def check_organizer_permissions(driver, group_url):
+    """Check if user has organizer permissions for the group."""
+    try:
+        logging.info("Checking organizer permissions...")
+        
+        # Navigate to group page
+        driver.get(group_url)
+        time.sleep(3)
+        
+        # Look for organizer-specific elements
+        organizer_indicators = [
+            '[data-testid="organizer-tools"]',
+            'button[aria-label*="Organizer"]',
+            '.organizer-tools',
+            '[data-testid="group-actions"]',
+            'button:contains("Organize")'
+        ]
+        
+        for indicator in organizer_indicators:
+            try:
+                if 'contains' in indicator:
+                    # Use XPath for contains
+                    element = driver.find_element(By.XPATH, f"//button[contains(text(), 'Organize')]")
+                else:
+                    element = driver.find_element(By.CSS_SELECTOR, indicator)
+                
+                if element.is_displayed():
+                    logging.info(f"Found organizer permission indicator: {indicator}")
+                    return True
+            except NoSuchElementException:
+                continue
+        
+        logging.warning("No organizer permission indicators found")
+        return False
+        
+    except Exception as e:
+        logging.error(f"Error checking organizer permissions: {str(e)}")
         return False
 
 def is_event_within_range(event_date_str):
@@ -261,7 +476,64 @@ def is_event_within_range(event_date_str):
 
 def announce_events(driver, group_url):
     """Navigate to events page and announce events."""
+    events_processed = 0
+    events_announced = 0
+    events_failed_to_announce = 0
+    failed_events = []
+    
     try:
+        # First, check if we're authenticated
+        if not check_authentication(driver):
+            error_message = ("AUTHENTICATION ISSUE: The script is not logged in to Meetup.com. "
+                           "This is likely why no announce buttons are being found. "
+                           "Please run the script with --manual-login to authenticate:\n\n"
+                           "cd /var/www/meetup_automation\n"
+                           "source venv/bin/activate\n"
+                           "python meetup_announcer.py --manual-login --group-url \"https://www.meetup.com/joyful-parenting-sf/\"\n\n"
+                           "Then log in through the browser window that appears.")
+            
+            logging.error("Authentication check failed - not logged in")
+            send_error_email(
+                error_message,
+                'meetup_announcer.log',
+                'authentication_error_screenshot.png'
+            )
+            
+            # Take screenshot for debugging
+            try:
+                driver.save_screenshot('authentication_error_screenshot.png')
+                logging.info("Saved authentication error screenshot")
+            except:
+                logging.error("Could not save authentication error screenshot")
+            
+            return
+        
+        logging.info("Authentication check passed - user appears to be logged in")
+        
+        # Check organizer permissions
+        if not check_organizer_permissions(driver, group_url):
+            error_message = ("ORGANIZER PERMISSIONS ISSUE: The logged-in user does not appear to have "
+                           "organizer permissions for this Meetup group. Only organizers can announce events. "
+                           "Please verify that the logged-in account has organizer access to the group.")
+            
+            logging.error("Organizer permissions check failed")
+            send_error_email(
+                error_message,
+                'meetup_announcer.log',
+                'permissions_error_screenshot.png'
+            )
+            
+            # Take screenshot for debugging
+            try:
+                driver.save_screenshot('permissions_error_screenshot.png')
+                logging.info("Saved permissions error screenshot")
+            except:
+                logging.error("Could not save permissions error screenshot")
+            
+            return
+        
+        logging.info("Organizer permissions check passed")
+        
         events_url = f"{group_url}events/"
         logging.info(f"Attempting to navigate to: {events_url}")
         
@@ -304,7 +576,24 @@ def announce_events(driver, group_url):
                 continue
         
         if not event_cards:
-            logging.error("No event cards found with any selector")
+            error_msg = "No event cards found with any selector"
+            logging.error(error_msg)
+            # Since we're authenticated, this might be a website change issue
+            send_error_email(
+                f"WEBSITE STRUCTURE CHANGE: Could not find event cards on {group_url}events/. "
+                f"This might indicate that Meetup.com has changed their website structure. "
+                f"Authentication appears to be working correctly.",
+                'meetup_announcer.log',
+                'no_events_screenshot.png'
+            )
+            
+            # Take screenshot for debugging
+            try:
+                driver.save_screenshot('no_events_screenshot.png')
+                logging.info("Saved no events found screenshot")
+            except:
+                logging.error("Could not save no events screenshot")
+            
             return
         
         logging.info("Event cards loaded successfully")
@@ -321,57 +610,117 @@ def announce_events(driver, group_url):
                 logging.warning(f"Could not get event details from card: {str(e)}")
                 continue
         
+        logging.info(f"Found {len(event_urls)} events to process")
+        
         # Process each event URL
         for event_url, event_date in event_urls:
             try:
                 # Check if event is within the next 18 days or in the past
                 if not is_event_within_range(event_date):
                     logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
-                    return  # Exit the function since all subsequent events will be further in the future
+                    break  # Exit the loop since all subsequent events will be further in the future
                 
-                logging.info(f"Processing event on {event_date}")
+                events_processed += 1
+                logging.info(f"Processing event {events_processed} on {event_date}")
                 logging.info(f"Navigating to event page: {event_url}")
                 
                 # Navigate to event page
                 driver.get(event_url)
-                time.sleep(2)  # Wait for page to load
+                time.sleep(3)  # Increased wait time for page to load
                 
-                # Look for the announce banner
-                try:
-                    logging.info("Looking for announce banner...")
-                    announce_banner = WebDriverWait(driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="event-announce-banner"]'))
-                    )
-                    
-                    if announce_banner.is_displayed():
-                        logging.info("Found announce banner")
+                # Look for the announce banner with multiple selectors and longer waits
+                announce_found = False
+                banner_selectors = [
+                    '[data-testid="event-announce-banner"]',
+                    '.z-banner [data-testid="event-announce-banner"]',
+                    'div[data-testid="banner"] [data-testid="event-announce-banner"]',
+                    '.bg-tooltipDark [data-testid="event-announce-banner"]'
+                ]
+                
+                for banner_selector in banner_selectors:
+                    try:
+                        logging.info(f"Looking for announce banner with selector: {banner_selector}")
+                        announce_banner = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, banner_selector))
+                        )
                         
-                        # Find and click the announce button in the banner
-                        announce_button = announce_banner.find_element(By.CSS_SELECTOR, 'button[date-event-label="announce"]')
-                        if announce_button.is_displayed() and announce_button.is_enabled():
-                            logging.info(f"Clicking announce button for event on {event_date}")
-                            announce_button.click()
-                            time.sleep(2)  # Wait for any popups or confirmations
+                        if announce_banner.is_displayed():
+                            logging.info(f"Found announce banner with selector: {banner_selector}")
+                            announce_found = True
                             
-                            # Handle any confirmation dialogs
-                            try:
-                                confirm_button = WebDriverWait(driver, 5).until(
-                                    EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="confirm-button"]'))
-                                )
-                                confirm_button.click()
-                                logging.info("Event announced successfully")
-                            except TimeoutException:
-                                logging.info("No confirmation dialog found")
+                            # Try multiple button selectors
+                            button_selectors = [
+                                'button[date-event-label="announce"]',
+                                'button[data-event-label="announce"]',
+                                'button:contains("Announce")',
+                                'button span:contains("Announce")'
+                            ]
+                            
+                            button_clicked = False
+                            for button_selector in button_selectors:
+                                try:
+                                    if 'contains' in button_selector:
+                                        # Use XPath for contains
+                                        xpath_selector = f"//button[contains(text(), 'Announce')] | //button//span[contains(text(), 'Announce')]/.."
+                                        announce_button = announce_banner.find_element(By.XPATH, xpath_selector)
+                                    else:
+                                        announce_button = announce_banner.find_element(By.CSS_SELECTOR, button_selector)
+                                    
+                                    if announce_button.is_displayed() and announce_button.is_enabled():
+                                        logging.info(f"Found clickable announce button with selector: {button_selector}")
+                                        logging.info(f"Clicking announce button for event on {event_date}")
+                                        announce_button.click()
+                                        button_clicked = True
+                                        time.sleep(3)  # Wait for any popups or confirmations
+                                        
+                                        # Handle any confirmation dialogs
+                                        try:
+                                            confirm_button = WebDriverWait(driver, 5).until(
+                                                EC.element_to_be_clickable((By.CSS_SELECTOR, '[data-testid="confirm-button"]'))
+                                            )
+                                            confirm_button.click()
+                                            logging.info("Clicked confirmation button")
+                                        except TimeoutException:
+                                            logging.info("No confirmation dialog found")
+                                        
+                                        events_announced += 1
+                                        logging.info(f"Event on {event_date} announced successfully!")
+                                        break
+                                    else:
+                                        logging.info(f"Button found but not clickable with selector: {button_selector}")
+                                except Exception as e:
+                                    logging.warning(f"Button selector {button_selector} failed: {str(e)}")
+                                    continue
+                            
+                            if not button_clicked:
+                                logging.warning(f"Found announce banner but could not click button for event on {event_date}")
+                                events_failed_to_announce += 1
+                                failed_events.append(f"{event_date}: Found banner but button not clickable")
+                            
+                            break  # Exit banner selector loop since we found the banner
                         else:
-                            logging.info("Announce button not clickable")
-                    else:
-                        logging.info("Announce banner not visible")
-                except TimeoutException:
-                    logging.info("No announce banner found - event may already be announced")
+                            logging.info(f"Banner found but not visible with selector: {banner_selector}")
+                    except TimeoutException:
+                        logging.info(f"No announce banner found with selector: {banner_selector}")
+                        continue
+                
+                if not announce_found:
+                    logging.info(f"No announce banner found for event on {event_date} - event may already be announced")
+                    # Take a screenshot for debugging (but don't send email - this is normal)
+                    try:
+                        screenshot_path = f'no_banner_screenshot_{event_date.replace("/", "_").replace(" ", "_")}.png'
+                        driver.save_screenshot(screenshot_path)
+                        logging.info(f"Saved screenshot to {screenshot_path}")
+                    except Exception as e:
+                        logging.warning(f"Could not save screenshot: {str(e)}")
                 
             except Exception as e:
+                events_failed_to_announce += 1
                 error_traceback = traceback.format_exc()
-                logging.error(f"Error processing event: {str(e)}\nTraceback:\n{error_traceback}")
+                error_msg = f"Error processing event on {event_date}: {str(e)}\nTraceback:\n{error_traceback}"
+                logging.error(error_msg)
+                failed_events.append(f"{event_date}: {str(e)}")
+                
                 # Take a screenshot for debugging
                 try:
                     driver.save_screenshot('error_screenshot.png')
@@ -379,6 +728,28 @@ def announce_events(driver, group_url):
                 except:
                     logging.error("Could not save error screenshot")
                 continue
+        
+        # Summary logging
+        logging.info(f"=== PROCESSING COMPLETE ===")
+        logging.info(f"Events processed: {events_processed}")
+        logging.info(f"Events announced: {events_announced}")
+        logging.info(f"Events failed to announce: {events_failed_to_announce}")
+        
+        # Send email notification only for actual failures (not when events are already announced)
+        if events_failed_to_announce > 0:
+            error_message = f"ANNOUNCE FAILURES: Failed to announce {events_failed_to_announce} out of {events_processed} events:\n\n" + "\n".join(failed_events)
+            error_message += f"\n\nNote: Events without announce banners are typically already announced and don't require action."
+            
+            logging.warning("Sending email notification about failed announces")
+            send_error_email(
+                error_message,
+                'meetup_announcer.log',
+                'error_screenshot.png'
+            )
+        elif events_announced > 0:
+            logging.info(f"SUCCESS: Announced {events_announced} events - no notification needed")
+        else:
+            logging.info("NO ACTION NEEDED: No events required announcing - all events may already be announced")
             
     except Exception as e:
         error_traceback = traceback.format_exc() 
@@ -394,6 +765,7 @@ def announce_events(driver, group_url):
 def main():
     parser = argparse.ArgumentParser(description='Meetup Event Announcer')
     parser.add_argument('--manual-login', action='store_true', help='Perform manual login')
+    parser.add_argument('--auto-login', action='store_true', help='Attempt automated login using saved credentials')
     parser.add_argument('--group-url', required=True, help='URL of your Meetup group')
     args = parser.parse_args()
     
@@ -402,10 +774,14 @@ def main():
     
     try:
         display = setup_display(args.manual_login)
-        driver = setup_driver()
+        driver = setup_driver(args.manual_login)  # Pass manual_login parameter
         
         if args.manual_login:
             if not manual_login(driver, args.group_url):
+                return
+        elif args.auto_login:
+            if not automated_login(driver, args.group_url):
+                logging.error("Automated login failed. You may need to run with --manual-login instead.")
                 return
         
         announce_events(driver, args.group_url)

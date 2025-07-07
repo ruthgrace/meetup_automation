@@ -1,0 +1,6 @@
+2025-07-07 22:47:19,191 - INFO - Using existing X11 display
+2025-07-07 22:47:19,951 - INFO - Starting manual login process...
+
+Please log in manually in the browser window.
+The browser should appear on your local machine through X11 forwarding.
+Press Enter when you have completed the login...
