@@ -195,23 +195,138 @@ def setup_driver(manual_login=False):
 def manual_login(driver, group_url):
     """Handle manual login process"""
     logging.info("Starting manual login process...")
-    driver.get(f"{group_url}")
+    
+    try:
+        logging.info(f"Navigating to: {group_url}")
+        driver.get(f"{group_url}")
+        
+        # Wait for page to load
+        time.sleep(3)
+        
+        # Check if navigation was successful
+        current_url = driver.current_url
+        logging.info(f"Current URL after navigation: {current_url}")
+        
+        if current_url == "data:," or "data:" in current_url:
+            logging.error("Navigation failed - still on blank page")
+            logging.info("Attempting to navigate again...")
+            
+            # Try navigating again
+            driver.get("https://www.meetup.com")
+            time.sleep(3)
+            current_url = driver.current_url
+            logging.info(f"Current URL after second attempt: {current_url}")
+            
+            if current_url == "data:," or "data:" in current_url:
+                logging.error("Second navigation attempt failed")
+                print("\nERROR: Cannot navigate to Meetup.com")
+                print("Please manually navigate to https://www.meetup.com in the browser window")
+                print("Then log in with your Google account")
+            else:
+                logging.info("Second navigation attempt successful")
+        else:
+            logging.info("Navigation successful")
+        
+    except Exception as e:
+        logging.error(f"Error during navigation: {str(e)}")
+        print(f"\nERROR: Navigation failed: {str(e)}")
+        print("Please manually navigate to https://www.meetup.com in the browser window")
     
     # Wait for user to log in
     print("\nPlease log in manually in the browser window.")
     print("The browser should appear on your local machine through X11 forwarding.")
+    print("If the page didn't load, manually navigate to: https://www.meetup.com")
+    print("Make sure you:")
+    print("1. Click 'Log in' or 'Sign up'")
+    print("2. Choose 'Continue with Google'")
+    print("3. Complete the Google authentication")
+    print("4. You should see your profile picture/menu in the top right")
     input("Press Enter when you have completed the login...")
     
-    # Verify login was successful
+    # Take a screenshot for debugging
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, '[data-testid="header-profile-menu"]'))
-        )
-        logging.info("Login successful!")
-        return True
-    except TimeoutException:
-        logging.error("Login verification failed. Please try again.")
-        return False
+        driver.save_screenshot('login_verification_screenshot.png')
+        logging.info("Saved screenshot for login verification debugging")
+    except Exception as e:
+        logging.warning(f"Could not save screenshot: {str(e)}")
+    
+    # Check current URL after login
+    current_url = driver.current_url
+    logging.info(f"Current URL after login: {current_url}")
+    
+    # Verify login was successful with multiple selectors
+    logging.info("Verifying login was successful...")
+    
+    # Try multiple selectors for profile menu
+    profile_selectors = [
+        '[data-testid="header-profile-menu"]',
+        '[data-testid="headerProfileMenu"]',
+        '[data-testid="nav-profile"]',
+        'button[aria-label*="Profile"]',
+        '.header-profile',
+        '[data-testid="header-profile"]',
+        'img[alt*="profile"]',
+        'div[data-testid="header"] img',
+        'button[data-testid="header-profile-menu-button"]'
+    ]
+    
+    login_successful = False
+    for selector in profile_selectors:
+        try:
+            logging.info(f"Trying profile selector: {selector}")
+            element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+            )
+            if element.is_displayed():
+                logging.info(f"Found profile element with selector: {selector}")
+                login_successful = True
+                break
+        except TimeoutException:
+            logging.info(f"Profile selector {selector} not found")
+            continue
+    
+    if not login_successful:
+        logging.warning("Could not find profile menu elements - checking for other login indicators")
+        
+        # Check for other login indicators
+        other_login_indicators = [
+            '[data-testid="header"] button',
+            '.header button',
+            'nav button',
+            'header a[href*="profile"]',
+            'header a[href*="account"]'
+        ]
+        
+        for selector in other_login_indicators:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    logging.info(f"Found {len(elements)} elements with selector: {selector}")
+                    for i, element in enumerate(elements[:3]):  # Check first 3 elements
+                        try:
+                            text = element.text.strip()
+                            if text:
+                                logging.info(f"Element {i} text: '{text}'")
+                        except:
+                            pass
+            except Exception as e:
+                logging.info(f"Error checking selector {selector}: {str(e)}")
+        
+        # Check if we're still on a login page
+        if 'login' in current_url.lower() or 'signin' in current_url.lower():
+            logging.error("Still on login page - login was not completed")
+            print("\nERROR: You are still on the login page.")
+            print("Please complete the login process and try again.")
+            return False
+        else:
+            logging.warning("Not on login page but couldn't find profile menu")
+            print("\nWARNING: Could not verify login status.")
+            print("If you are logged in, the automation should still work.")
+            print("Continuing anyway...")
+            return True
+    
+    logging.info("Login verification successful!")
+    return True
 
 def automated_login(driver, group_url):
     """Attempt automated login using saved credentials."""
