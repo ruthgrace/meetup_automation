@@ -259,22 +259,25 @@ def manual_login(driver, group_url):
     
     # Try multiple selectors for profile menu
     profile_selectors = [
-        '[data-testid="header-profile-menu"]',
-        '[data-testid="headerProfileMenu"]',
-        '[data-testid="nav-profile"]',
-        'button[aria-label*="Profile"]',
-        '.header-profile',
-        '[data-testid="header-profile"]',
-        'img[alt*="profile"]',
-        'div[data-testid="header"] img',
-        'button[data-testid="header-profile-menu-button"]'
+        'button#desktop-profile-menu',                    # The actual profile button ID
+        'button[aria-label="Profile menu"]',             # The actual aria-label
+        'img[alt*="Photo of"]',                          # The profile image alt text
+        'button[aria-label*="Profile"]',                 # Generic profile button
+        '[data-testid="header-profile-menu"]',           # Original selector (backup)
+        '[data-testid="headerProfileMenu"]',             # Alternative
+        '[data-testid="nav-profile"]',                   # Another alternative
+        '.header-profile',                               # Class-based
+        '[data-testid="header-profile"]',                # Another data-testid
+        'img[alt*="profile"]',                           # Generic profile image
+        'div[data-testid="header"] img',                 # Header image
+        'button[data-testid="header-profile-menu-button"]' # Another backup
     ]
     
     login_successful = False
     for selector in profile_selectors:
         try:
             logging.info(f"Trying profile selector: {selector}")
-            element = WebDriverWait(driver, 3).until(
+            element = WebDriverWait(driver, 0.5).until(  # Reduced from 3 seconds to 0.5 seconds
                 EC.presence_of_element_located((By.CSS_SELECTOR, selector))
             )
             if element.is_displayed():
@@ -455,7 +458,7 @@ def check_authentication(driver):
         
         for indicator in login_indicators:
             try:
-                element = WebDriverWait(driver, 3).until(
+                element = WebDriverWait(driver, 0.5).until(  # Reduced from 3 seconds to 0.5 seconds
                     EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
                 )
                 if element.is_displayed():

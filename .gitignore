@@ -21,3 +21,5 @@ chrome_profile/
 meetup_announcer.log
 error_screenshot.png
 authentication_error_screenshot.png
+login_verification_screenshot.png
+permissions_error_screenshot.png
