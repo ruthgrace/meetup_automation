@@ -509,30 +509,29 @@ def check_organizer_permissions(driver, group_url):
         driver.get(group_url)
         time.sleep(3)
         
-        # Look for organizer-specific elements
-        organizer_indicators = [
-            '[data-testid="organizer-tools"]',
-            'button[aria-label*="Organizer"]',
-            '.organizer-tools',
-            '[data-testid="group-actions"]',
-            'button:contains("Organize")'
+        # Look for the "Manage group" button - this is the most reliable indicator
+        manage_group_selectors = [
+            '#links-manage-group-toggle',  # ID selector
+            'button[data-event-label="manage-group-toggle"]',  # Data attribute
+            'button[aria-label="Group management actions"]',  # ARIA label
+            'button:contains("Manage group")'  # Text content
         ]
         
-        for indicator in organizer_indicators:
+        for selector in manage_group_selectors:
             try:
-                if 'contains' in indicator:
+                if 'contains' in selector:
                     # Use XPath for contains
-                    element = driver.find_element(By.XPATH, f"//button[contains(text(), 'Organize')]")
+                    element = driver.find_element(By.XPATH, f"//button[contains(text(), 'Manage group')]")
                 else:
-                    element = driver.find_element(By.CSS_SELECTOR, indicator)
+                    element = driver.find_element(By.CSS_SELECTOR, selector)
                 
                 if element.is_displayed():
-                    logging.info(f"Found organizer permission indicator: {indicator}")
+                    logging.info(f"Found 'Manage group' button with selector: {selector}")
                     return True
             except NoSuchElementException:
                 continue
         
-        logging.warning("No organizer permission indicators found")
+        logging.warning("No 'Manage group' button found - user may not have organizer permissions")
         return False
         
     except Exception as e:
