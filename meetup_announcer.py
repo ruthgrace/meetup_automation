@@ -164,6 +164,12 @@ def setup_driver(manual_login=False):
     chrome_options.add_argument('--log-level=3')
     chrome_options.add_argument('--silent')
     
+    # Set up persistent Chrome profile directory
+    import os
+    profile_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chrome_profile')
+    chrome_options.add_argument(f'--user-data-dir={profile_path}')
+    logging.info(f"Using Chrome profile directory: {profile_path}")
+    
     # Only use headless mode if NOT doing manual login
     if not manual_login:
         chrome_options.add_argument('--headless=new')
@@ -431,7 +437,7 @@ def automated_login(driver, group_url):
         time.sleep(5)
         
         # Check if login was successful
-        if check_authentication(driver):
+        if check_authentication(driver, group_url):
             logging.info("Automated login successful!")
             return True
         else:
@@ -442,10 +448,15 @@ def automated_login(driver, group_url):
         logging.error(f"Error during automated login: {str(e)}")
         return False
 
-def check_authentication(driver):
+def check_authentication(driver, group_url):
     """Check if the user is properly authenticated."""
     try:
         logging.info("Checking authentication status...")
+        
+        # Navigate to the specific group page to check authentication
+        logging.info(f"Navigating to group page: {group_url}")
+        driver.get(group_url)
+        time.sleep(3)  # Wait for page to load
         
         # Look for elements that indicate we're logged in
         login_indicators = [
@@ -453,12 +464,14 @@ def check_authentication(driver):
             '[data-testid="headerProfileMenu"]',    # Alternative profile menu
             'button[aria-label*="Profile"]',         # Profile button
             '.header-profile',                       # Profile section
-            '[data-testid="nav-profile"]'            # Navigation profile
+            '[data-testid="nav-profile"]',           # Navigation profile
+            'button[aria-label*="profile"]',         # Profile button (case insensitive)
+            '.profileMenu'                           # Profile menu class
         ]
         
         for indicator in login_indicators:
             try:
-                element = WebDriverWait(driver, 0.5).until(  # Reduced from 3 seconds to 0.5 seconds
+                element = WebDriverWait(driver, 2).until(  # Increased from 0.5 to 2 seconds
                     EC.presence_of_element_located((By.CSS_SELECTOR, indicator))
                 )
                 if element.is_displayed():
@@ -474,7 +487,8 @@ def check_authentication(driver):
             'button[type="submit"]',
             'form[action*="login"]',
             '.login-form',
-            'input[placeholder*="email"]'
+            'input[placeholder*="email"]',
+            'a[href*="login"]'
         ]
         
         for indicator in login_page_indicators:
@@ -600,7 +614,7 @@ def announce_events(driver, group_url):
     
     try:
         # First, check if we're authenticated
-        if not check_authentication(driver):
+        if not check_authentication(driver, group_url):
             error_message = ("AUTHENTICATION ISSUE: The script is not logged in to Meetup.com. "
                            "This is likely why no announce buttons are being found. "
                            "Please run the script with --manual-login to authenticate:\n\n"
