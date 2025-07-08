@@ -164,11 +164,30 @@ def setup_driver(manual_login=False):
     chrome_options.add_argument('--log-level=3')
     chrome_options.add_argument('--silent')
     
-    # Set up persistent Chrome profile directory
+    # Set up persistent Chrome profile directory with error handling
     import os
     profile_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chrome_profile')
-    chrome_options.add_argument(f'--user-data-dir={profile_path}')
-    logging.info(f"Using Chrome profile directory: {profile_path}")
+    
+    # Ensure the profile directory exists and has proper permissions
+    try:
+        if not os.path.exists(profile_path):
+            os.makedirs(profile_path, mode=0o755)
+            logging.info(f"Created Chrome profile directory: {profile_path}")
+        else:
+            logging.info(f"Using existing Chrome profile directory: {profile_path}")
+        
+        # Set the user data directory
+        chrome_options.add_argument(f'--user-data-dir={profile_path}')
+        
+        # Additional options to prevent profile corruption
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-crash-reporter')
+        chrome_options.add_argument('--disable-gpu-sandbox')
+        
+    except Exception as e:
+        logging.warning(f"Could not set up Chrome profile directory: {str(e)}")
+        logging.info("Continuing without persistent profile...")
     
     # Only use headless mode if NOT doing manual login
     if not manual_login:
