@@ -113,6 +113,29 @@ def send_error_email(error_message, log_file_path, screenshot_path):
         logging.error(error_msg)
         print(f"FAILED TO SEND EMAIL: {str(e)}")  # Also print to console
 
+def cleanup_previous_screenshots():
+    """Clean up screenshot files from previous runs."""
+    import os
+    import glob
+    
+    try:
+        # Get all PNG files in the current directory (screenshots)
+        screenshot_files = glob.glob("*.png")
+        
+        if screenshot_files:
+            logging.info(f"Cleaning up {len(screenshot_files)} screenshot files from previous runs...")
+            for screenshot_file in screenshot_files:
+                try:
+                    os.remove(screenshot_file)
+                    logging.info(f"Deleted: {screenshot_file}")
+                except Exception as e:
+                    logging.warning(f"Could not delete {screenshot_file}: {str(e)}")
+        else:
+            logging.info("No screenshot files found to clean up")
+            
+    except Exception as e:
+        logging.warning(f"Error during screenshot cleanup: {str(e)}")
+
 def setup_display(manual_login=False):
     """Set up virtual display for browser."""
     if manual_login:
@@ -923,6 +946,9 @@ def main():
     driver = None
     
     try:
+        # Clean up screenshots from previous runs
+        cleanup_previous_screenshots()
+        
         display = setup_display(args.manual_login)
         driver = setup_driver(args.manual_login)  # Pass manual_login parameter
         
