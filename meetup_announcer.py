@@ -809,7 +809,12 @@ def announce_events(driver, group_url):
                 # Navigate to event page
                 driver.get(event_url)
                 time.sleep(3)  # Increased wait time for page to load
-                
+
+                # Check if event is cancelled - skip if so
+                if '"status":"CANCELLED"' in driver.page_source:
+                    logging.info(f"Event on {event_date} is cancelled - skipping")
+                    continue
+
                 # Look for the announce banner using multiple methods
                 announce_found = False
                 announce_banner = None
