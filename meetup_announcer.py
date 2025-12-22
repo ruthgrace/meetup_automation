@@ -42,9 +42,9 @@ def send_error_email(error_message, log_file_path, screenshot_path):
         # Add error message
         body = f"""
         The Meetup Announcer script encountered an error:
-        
+
         {error_message}
-        
+
         Please check the attached log file and screenshot for details.
         """
         msg.attach(MIMEText(body, 'plain'))
@@ -660,6 +660,7 @@ def announce_events(driver, group_url):
             error_message = ("AUTHENTICATION ISSUE: The script is not logged in to Meetup.com. "
                            "This is likely why no announce buttons are being found. "
                            "Please run the script with --manual-login to authenticate:\n\n"
+                           "ssh -Y almalinux\n"
                            "cd /var/www/meetup_automation\n"
                            "source venv/bin/activate\n"
                            "python meetup_announcer.py --manual-login --group-url \"https://www.meetup.com/joyful-parenting-sf/\"\n\n"
