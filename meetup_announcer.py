@@ -508,7 +508,8 @@ def check_authentication(driver, group_url):
             '.header-profile',                       # Profile section
             '[data-testid="nav-profile"]',           # Navigation profile
             'button[aria-label*="profile"]',         # Profile button (case insensitive)
-            '.profileMenu'                           # Profile menu class
+            '.profileMenu',                          # Profile menu class
+            'img[alt*="Photo of"]'                   # User profile photo
         ]
         
         for indicator in login_indicators:
@@ -526,11 +527,9 @@ def check_authentication(driver, group_url):
         login_page_indicators = [
             'input[type="email"]',
             'input[name="email"]',
-            'button[type="submit"]',
             'form[action*="login"]',
             '.login-form',
-            'input[placeholder*="email"]',
-            'a[href*="login"]'
+            'input[placeholder*="email"]'
         ]
         
         for indicator in login_page_indicators:
