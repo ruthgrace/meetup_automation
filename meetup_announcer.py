@@ -12,7 +12,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from pyvirtualdisplay import Display
 from selenium.webdriver.chrome.options import Options
 from constants import GMAIL_ADDRESS, GMAIL_PASSWORD
@@ -815,15 +815,79 @@ def announce_events(driver, group_url):
                     logging.info(f"Event on {event_date} is cancelled - skipping")
                     continue
 
+                # Dismiss "Become an organizer" promotional banner if present
+                try:
+                    promo_banner_xpaths = [
+                        "//div[contains(text(), 'Become an organizer') or contains(., 'Become an organizer')]",
+                        "//div[contains(., 'Start now') and contains(., 'create an event')]",
+                    ]
+                    for xpath in promo_banner_xpaths:
+                        try:
+                            promo_banner = driver.find_element(By.XPATH, xpath)
+                            # Find the close button (X) in the banner
+                            close_btn = promo_banner.find_element(By.XPATH, ".//*[contains(@aria-label, 'close') or contains(@aria-label, 'Close') or contains(@aria-label, 'dismiss')] | .//button[./*[name()='svg']]")
+                            if close_btn.is_displayed():
+                                logging.info("Dismissing 'Become an organizer' promotional banner")
+                                close_btn.click()
+                                time.sleep(0.5)
+                                break
+                        except:
+                            continue
+                except Exception as e:
+                    logging.debug(f"No promotional banner to dismiss: {e}")
+
+                # Dismiss any overlay banners that might block clicks on the Announce button
+                # Strategy: Find all banner-like elements with close buttons, dismiss any that don't contain "Let your members know"
+                try:
+                    dismissible_selectors = [
+                        "//div[contains(@class, 'banner')]",
+                        "//div[contains(@class, 'bg-ds2')]",
+                        "//div[contains(@class, 'rounded')][.//button or .//*[name()='svg']]",
+                    ]
+
+                    for selector in dismissible_selectors:
+                        try:
+                            banners = driver.find_elements(By.XPATH, selector)
+                            for banner in banners:
+                                # CRITICAL: Skip the announce banner - it contains this text
+                                if 'Let your members know' in banner.text:
+                                    continue
+                                if 'Announce' in banner.text and 'email announcement' in banner.text:
+                                    continue
+
+                                # Try to find and click a close/dismiss button (X icon or close button)
+                                close_btn_xpaths = [
+                                    ".//*[contains(@aria-label, 'close') or contains(@aria-label, 'dismiss') or contains(@aria-label, 'Close')]",
+                                    ".//*[name()='svg'][@aria-hidden='true']/parent::button",
+                                    ".//*[name()='svg']/parent::*[self::button or @role='button']",
+                                    ".//button[contains(@class, 'close')]",
+                                ]
+
+                                for close_xpath in close_btn_xpaths:
+                                    try:
+                                        close_btn = banner.find_element(By.XPATH, close_xpath)
+                                        if close_btn.is_displayed():
+                                            banner_preview = banner.text[:50].replace('\n', ' ')
+                                            logging.info(f"Dismissing overlay banner: '{banner_preview}...'")
+                                            close_btn.click()
+                                            time.sleep(0.5)
+                                            break
+                                    except:
+                                        continue
+                        except:
+                            continue
+                except Exception as e:
+                    logging.debug(f"Error dismissing overlays: {e}")
+
                 # Look for the announce banner using multiple methods
                 announce_found = False
                 announce_banner = None
 
                 # Method 1: Try XPath to find banner by "Let your members know" text
+                # Use specific selectors to avoid false positives
                 banner_xpaths = [
                     "//h4[contains(text(), 'Let your members know')]/ancestor::div[contains(@class, 'bg-ds2-banner')]",
-                    "//h4[contains(text(), 'Let your members know')]/ancestor::div[contains(@class, 'rounded')]",
-                    "//*[contains(text(), 'Let your members know')]/ancestor::div[contains(@class, 'flex')]"
+                    "//h4[contains(text(), 'Let your members know')]/ancestor::div[contains(@class, 'rounded-ds2')]"
                 ]
 
                 for banner_xpath in banner_xpaths:
@@ -858,53 +922,114 @@ def announce_events(driver, group_url):
                         except TimeoutException:
                             continue
 
+                # Verify the banner is actually an announce banner (not a false positive)
                 if announce_found and announce_banner:
-                    # Find and click the Announce button
+                    try:
+                        banner_text = announce_banner.text
+                        if 'Let your members know' not in banner_text:
+                            logging.info(f"Banner found but doesn't contain expected text, treating as no banner")
+                            announce_found = False
+                            announce_banner = None
+                    except Exception as e:
+                        logging.warning(f"Could not verify banner text: {e}")
+
+                if announce_found and announce_banner:
+                    # Find and click the Announce button with retry logic for stale elements
                     button_clicked = False
+                    max_retries = 2
 
-                    # Try XPath to find button with "Announce" text
-                    button_xpaths = [
-                        ".//button[.//span[contains(text(), 'Announce')]]",
-                        ".//button[contains(., 'Announce')]",
-                        "//button[.//span[contains(text(), 'Announce')]]"
-                    ]
+                    # Wait for button to render after banner is found
+                    time.sleep(2)
 
-                    for button_xpath in button_xpaths:
+                    for retry_attempt in range(max_retries):
+                        if button_clicked:
+                            break
+
                         try:
-                            logging.info(f"Looking for Announce button with XPath: {button_xpath}")
-                            if button_xpath.startswith('.'):
-                                announce_button = announce_banner.find_element(By.XPATH, button_xpath)
-                            else:
-                                announce_button = driver.find_element(By.XPATH, button_xpath)
+                            # Try XPath to find button with "Announce" text
+                            # Added ".//button" as last fallback to find any button in banner
+                            button_xpaths = [
+                                ".//button[.//span[contains(text(), 'Announce')]]",
+                                ".//button[contains(., 'Announce')]",
+                                "//button[.//span[contains(text(), 'Announce')]]",
+                                ".//button[@type='button']",
+                                ".//button"
+                            ]
 
-                            if announce_button.is_displayed() and announce_button.is_enabled():
-                                logging.info(f"Found clickable Announce button")
-                                logging.info(f"Clicking announce button for event on {event_date}")
-                                announce_button.click()
-                                button_clicked = True
-                                time.sleep(3)  # Wait for any popups or confirmations
-
-                                # Handle any confirmation dialogs
+                            for button_xpath in button_xpaths:
                                 try:
-                                    confirm_button = WebDriverWait(driver, 5).until(
-                                        EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Confirm') or contains(., 'Send') or contains(., 'Yes')]"))
-                                    )
-                                    confirm_button.click()
-                                    logging.info("Clicked confirmation button")
-                                except TimeoutException:
-                                    logging.info("No confirmation dialog found")
+                                    logging.info(f"Looking for Announce button with XPath: {button_xpath}")
+                                    if button_xpath.startswith('.'):
+                                        # Use WebDriverWait with shorter timeout per XPath attempt
+                                        announce_button = WebDriverWait(driver, 5).until(
+                                            lambda d: announce_banner.find_element(By.XPATH, button_xpath)
+                                        )
+                                    else:
+                                        announce_button = WebDriverWait(driver, 5).until(
+                                            EC.presence_of_element_located((By.XPATH, button_xpath))
+                                        )
 
-                                events_announced += 1
-                                logging.info(f"Event on {event_date} announced successfully!")
-                                break
-                            else:
-                                logging.info(f"Button found but not clickable")
-                        except Exception as e:
-                            logging.warning(f"Button XPath {button_xpath} failed: {str(e)}")
+                                    if announce_button.is_displayed() and announce_button.is_enabled():
+                                        logging.info(f"Found clickable Announce button")
+                                        logging.info(f"Clicking announce button for event on {event_date}")
+
+                                        # Scroll into view first to ensure button is visible
+                                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", announce_button)
+                                        time.sleep(0.3)
+
+                                        # Try regular click first, fall back to JS click if intercepted
+                                        try:
+                                            announce_button.click()
+                                        except Exception as click_error:
+                                            logging.info(f"Regular click failed ({click_error}), using JS click")
+                                            driver.execute_script("arguments[0].click();", announce_button)
+
+                                        button_clicked = True
+                                        time.sleep(3)  # Wait for any popups or confirmations
+
+                                        # Handle any confirmation dialogs
+                                        try:
+                                            confirm_button = WebDriverWait(driver, 5).until(
+                                                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Confirm') or contains(., 'Send') or contains(., 'Yes')]"))
+                                            )
+                                            confirm_button.click()
+                                            logging.info("Clicked confirmation button")
+                                        except TimeoutException:
+                                            logging.info("No confirmation dialog found")
+
+                                        events_announced += 1
+                                        logging.info(f"Event on {event_date} announced successfully!")
+                                        break
+                                    else:
+                                        logging.info(f"Button found but not clickable")
+                                except StaleElementReferenceException:
+                                    raise  # Re-raise to trigger retry
+                                except TimeoutException:
+                                    logging.warning(f"Button XPath {button_xpath} timed out")
+                                    continue
+                                except Exception as e:
+                                    logging.warning(f"Button XPath {button_xpath} failed: {str(e)}")
+                                    continue
+
+                        except StaleElementReferenceException:
+                            logging.warning(f"Stale element reference, retry {retry_attempt + 1}/{max_retries}")
+                            time.sleep(1)
+                            # Re-find the announce banner before retrying
+                            try:
+                                announce_banner = driver.find_element(By.XPATH, "//h4[contains(text(), 'Let your members know')]/ancestor::div[contains(@class, 'bg-ds2-banner')]")
+                            except:
+                                pass
                             continue
 
                     if not button_clicked:
                         logging.warning(f"Found announce banner but could not click button for event on {event_date}")
+                        # Log banner HTML for debugging
+                        try:
+                            banner_html = announce_banner.get_attribute('outerHTML')
+                            if banner_html:
+                                logging.warning(f"Banner HTML preview (first 1000 chars): {banner_html[:1000]}")
+                        except Exception as html_err:
+                            logging.warning(f"Could not get banner HTML: {html_err}")
                         events_failed_to_announce += 1
                         failed_events.append(f"{event_date}: Found banner but button not clickable")
                 else:
