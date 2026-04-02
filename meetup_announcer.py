@@ -818,6 +818,11 @@ def announce_events(driver, group_url):
                 # Filter out navigation links - only keep actual event URLs with numeric IDs
                 if not event_url or not re.search(r'/events/\d+', event_url):
                     continue
+                # Filter out "similar events" from other groups - only process our group's events
+                group_slug = group_url.rstrip('/').split('/')[-1]  # e.g. "joyful-parenting-sf"
+                if group_slug and f'/{group_slug}/events/' not in event_url:
+                    logging.info(f"Skipping event from another group: {event_url}")
+                    continue
                 date_element = card.find_element(By.CSS_SELECTOR, 'time')
                 event_date = date_element.text
                 event_urls.append((event_url, event_date))
