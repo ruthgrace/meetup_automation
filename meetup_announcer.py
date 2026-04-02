@@ -234,7 +234,7 @@ def setup_driver(manual_login=False):
     # Create driver with increased timeouts
     driver = webdriver.Chrome(options=chrome_options)
     driver.set_page_load_timeout(60)  # Increase page load timeout to 60 seconds
-    driver.implicitly_wait(30)  # Increase implicit wait to 30 seconds
+    driver.implicitly_wait(5)  # Keep implicit wait short to avoid slow element searches
     
     # Set script timeout
     driver.set_script_timeout(60)
@@ -498,7 +498,16 @@ def check_authentication(driver, group_url):
         
         # Navigate to the specific group page to check authentication
         logging.info(f"Navigating to group page: {group_url}")
-        driver.get(group_url)
+        # Add retry logic for page load (renderer timeouts are transient)
+        for attempt in range(3):
+            try:
+                driver.get(group_url)
+                break
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                logging.warning(f"Auth page load attempt {attempt + 1} failed: {str(e)}")
+                time.sleep(5)
         time.sleep(3)  # Wait for page to load
         
         # Look for elements that indicate we're logged in
@@ -560,34 +569,55 @@ def check_organizer_permissions(driver, group_url):
     """Check if user has organizer permissions for the group."""
     try:
         logging.info("Checking organizer permissions...")
-        
-        # Navigate to group page
-        driver.get(group_url)
-        time.sleep(3)
-        
-        # Look for the "Manage group" button - this is the most reliable indicator
-        manage_group_selectors = [
-            '#links-manage-group-toggle',  # ID selector
-            'button[data-event-label="manage-group-toggle"]',  # Data attribute
-            'button[aria-label="Group management actions"]',  # ARIA label
-            'button:contains("Manage group")'  # Text content
+
+        # The group page was already loaded by check_authentication, no need to reload
+        # But if the URL changed (e.g. redirect), navigate back
+        if group_url.rstrip('/') not in driver.current_url:
+            for attempt in range(3):
+                try:
+                    driver.get(group_url)
+                    break
+                except Exception as e:
+                    if attempt == 2:
+                        raise
+                    logging.warning(f"Permissions page load attempt {attempt + 1} failed: {str(e)}")
+                    time.sleep(5)
+            time.sleep(3)
+
+        # Look for organizer indicators using multiple approaches
+        # "Manage group" button or "Create event" button both indicate organizer access
+        organizer_xpaths = [
+            "//button[contains(., 'Manage group')]",       # Button containing text (including child spans)
+            "//a[contains(., 'Manage group')]",             # Link variant
+            "//*[contains(@data-event-label, 'manage-group')]",  # Data attribute
+            "//button[contains(., 'Create event')]",        # Create event button (also organizer-only)
+            "//a[contains(., 'Create event')]",             # Link variant
         ]
-        
-        for selector in manage_group_selectors:
+
+        organizer_css = [
+            '#links-manage-group-toggle',                   # ID selector
+            'button[aria-label="Group management actions"]', # ARIA label
+        ]
+
+        for xpath in organizer_xpaths:
             try:
-                if 'contains' in selector:
-                    # Use XPath for contains
-                    element = driver.find_element(By.XPATH, f"//button[contains(text(), 'Manage group')]")
-                else:
-                    element = driver.find_element(By.CSS_SELECTOR, selector)
-                
+                element = driver.find_element(By.XPATH, xpath)
                 if element.is_displayed():
-                    logging.info(f"Found 'Manage group' button with selector: {selector}")
+                    logging.info(f"Found organizer indicator with XPath: {xpath}")
                     return True
             except NoSuchElementException:
                 continue
-        
-        logging.warning("No 'Manage group' button found - user may not have organizer permissions")
+
+        for selector in organizer_css:
+            try:
+                element = driver.find_element(By.CSS_SELECTOR, selector)
+                if element.is_displayed():
+                    logging.info(f"Found organizer indicator with CSS: {selector}")
+                    return True
+            except NoSuchElementException:
+                continue
+
+        logging.warning("No 'Manage group' or 'Create event' button found - user may not have organizer permissions")
         return False
         
     except Exception as e:
@@ -785,6 +815,9 @@ def announce_events(driver, group_url):
         for card in event_cards:
             try:
                 event_url = card.get_attribute('href')
+                # Filter out navigation links - only keep actual event URLs with numeric IDs
+                if not event_url or not re.search(r'/events/\d+', event_url):
+                    continue
                 date_element = card.find_element(By.CSS_SELECTOR, 'time')
                 event_date = date_element.text
                 event_urls.append((event_url, event_date))
@@ -801,14 +834,27 @@ def announce_events(driver, group_url):
                 if not is_event_within_range(event_date):
                     logging.info(f"Found event on {event_date} - more than 18 days away. Stopping processing as events are in chronological order.")
                     break  # Exit the loop since all subsequent events will be further in the future
-                
+
                 events_processed += 1
                 logging.info(f"Processing event {events_processed} on {event_date}")
                 logging.info(f"Navigating to event page: {event_url}")
                 
-                # Navigate to event page
-                driver.get(event_url)
-                time.sleep(3)  # Increased wait time for page to load
+                # Navigate to event page with retry logic for renderer timeouts
+                max_nav_retries = 3
+                for nav_attempt in range(max_nav_retries):
+                    try:
+                        driver.get(event_url)
+                        break
+                    except Exception as e:
+                        if nav_attempt == max_nav_retries - 1:
+                            raise
+                        logging.warning(f"Attempt {nav_attempt + 1} failed to load event page: {str(e)}")
+                        try:
+                            driver.get("about:blank")
+                        except:
+                            pass
+                        time.sleep(5)
+                time.sleep(3)  # Wait for page to fully render
 
                 # Check if event is cancelled - skip if so
                 if '"status":"CANCELLED"' in driver.page_source:
@@ -836,46 +882,18 @@ def announce_events(driver, group_url):
                 except Exception as e:
                     logging.debug(f"No promotional banner to dismiss: {e}")
 
-                # Dismiss any overlay banners that might block clicks on the Announce button
-                # Strategy: Find all banner-like elements with close buttons, dismiss any that don't contain "Let your members know"
+                # Dismiss known overlay banners that might block clicks on the Announce button
+                # Only target specific known banners to avoid slow broad searches
                 try:
-                    dismissible_selectors = [
-                        "//div[contains(@class, 'banner')]",
-                        "//div[contains(@class, 'bg-ds2')]",
-                        "//div[contains(@class, 'rounded')][.//button or .//*[name()='svg']]",
-                    ]
-
-                    for selector in dismissible_selectors:
-                        try:
-                            banners = driver.find_elements(By.XPATH, selector)
-                            for banner in banners:
-                                # CRITICAL: Skip the announce banner - it contains this text
-                                if 'Let your members know' in banner.text:
-                                    continue
-                                if 'Announce' in banner.text and 'email announcement' in banner.text:
-                                    continue
-
-                                # Try to find and click a close/dismiss button (X icon or close button)
-                                close_btn_xpaths = [
-                                    ".//*[contains(@aria-label, 'close') or contains(@aria-label, 'dismiss') or contains(@aria-label, 'Close')]",
-                                    ".//*[name()='svg'][@aria-hidden='true']/parent::button",
-                                    ".//*[name()='svg']/parent::*[self::button or @role='button']",
-                                    ".//button[contains(@class, 'close')]",
-                                ]
-
-                                for close_xpath in close_btn_xpaths:
-                                    try:
-                                        close_btn = banner.find_element(By.XPATH, close_xpath)
-                                        if close_btn.is_displayed():
-                                            banner_preview = banner.text[:50].replace('\n', ' ')
-                                            logging.info(f"Dismissing overlay banner: '{banner_preview}...'")
-                                            close_btn.click()
-                                            time.sleep(0.5)
-                                            break
-                                    except:
-                                        continue
-                        except:
-                            continue
+                    # Dismiss cookie consent banner if present
+                    try:
+                        cookie_btn = driver.find_element(By.CSS_SELECTOR, '#onetrust-accept-btn-handler')
+                        if cookie_btn.is_displayed():
+                            logging.info("Dismissing cookie consent banner")
+                            cookie_btn.click()
+                            time.sleep(0.5)
+                    except:
+                        pass
                 except Exception as e:
                     logging.debug(f"Error dismissing overlays: {e}")
 
@@ -1049,7 +1067,12 @@ def announce_events(driver, group_url):
                 logging.error(error_msg)
                 failed_events.append(f"{event_date}: {str(e)}")
                 
-                # Take a screenshot for debugging
+                # Try to recover driver state before taking screenshot
+                try:
+                    driver.get("about:blank")
+                    time.sleep(1)
+                except:
+                    pass
                 try:
                     driver.save_screenshot('error_screenshot.png')
                     logging.info("Saved error screenshot to error_screenshot.png")
